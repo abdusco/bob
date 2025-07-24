@@ -110,41 +110,75 @@ func (o *{{$tAlias.UpSingular}}Template) Create(ctx context.Context, exec bob.Ex
 	opt := o.BuildSetter()
 	ensureCreatable{{$tAlias.UpSingular}}(opt)
 
+  // Get or initialize the map of models currently being created
+  modelsInCreation, ok := modelsInCreationCtx.Value(ctx)
+  if !ok || modelsInCreation == nil {
+    modelsInCreation = make(map[string]any)
+  }
+  // Add the current object's setter to the map
+  modelsInCreation["{{$table.Key}}"] = opt
+  // Update the context with the new map
+  ctx = modelsInCreationCtx.WithValue(ctx, modelsInCreation)
+
 	{{range $index, $rel := $.Relationships.Get $table.Key -}}
 		{{- if not ($table.RelIsRequired $rel)}}{{continue}}{{end -}}
 		{{- $ftable := $.Aliases.Table .Foreign -}}
 		{{- $relAlias := $tAlias.Relationship .Name -}}
-		if o.r.{{$relAlias}} == nil {
-      {{$tAlias.UpSingular}}Mods.WithNew{{$relAlias}}().Apply(ctx, o)
-		}
 
-		var rel{{$index}} *models.{{$ftable.UpSingular}}
+	   var rel{{$index}} *models.{{$ftable.UpSingular}}
 
-		if o.r.{{$relAlias}}.o.alreadyPersisted {
-			rel{{$index}} = o.r.{{$relAlias}}.o.Build()
-		} else {
-			rel{{$index}}, err = o.r.{{$relAlias}}.o.Create(ctx, exec)
-			if err != nil {
-				return nil, err
-			}
-		}
-	
+	   // Check if the related object (parent) is already in creation
+	   if parentModel, found := modelsInCreation["{{$rel.Foreign}}"]; found {
+	     if pModel, isModel := parentModel.(*models.{{$ftable.UpSingular}}); isModel {
+	       // If the parent model is already created and in the context, use it
+	       rel{{$index}} = pModel
+	       // Assign foreign key on current model 'opt'
+	       {{range $rel.ValuedSides -}}
+	         {{- if ne .TableName $table.Key}}{{continue}}{{end -}}
+	         {{range .Mapped}}
+	           {{- if ne .ExternalTable $rel.Foreign}}{{continue}}{{end -}}
+	           {{- $fromColA := index $tAlias.Columns .Column -}}
+	           opt.{{$fromColA}} = {{$.Tables.ColumnAssigner $.CurrentPackage $.Importer $.Types $.Aliases $.Table.Key $rel.Foreign .Column .ExternalColumn "pModel" true}}
+	         {{end}}
+	       {{- end}}
+	     }
+	   }
 
-		{{range $rel.ValuedSides -}}
-			{{- if ne .TableName $table.Key}}{{continue}}{{end -}}
-			{{range .Mapped}}
-				{{- if ne .ExternalTable $rel.Foreign}}{{continue}}{{end -}}
-				{{- $fromColA := index $tAlias.Columns .Column -}}
-				{{- $relIndex := printf "rel%d" $index -}}
-				opt.{{$fromColA}} = {{$.Tables.ColumnAssigner $.CurrentPackage $.Importer $.Types $.Aliases $.Table.Key $rel.Foreign .Column .ExternalColumn $relIndex true}}
-			{{end}}
-		{{- end}}
+	   // Only create if rel{{$index}} was not already linked to a parent
+	   if rel{{$index}} == nil {
+		  if o.r.{{$relAlias}} == nil {
+	       {{$tAlias.UpSingular}}Mods.WithNew{{$relAlias}}().Apply(ctx, o)
+		  }
+
+		  if o.r.{{$relAlias}}.o.alreadyPersisted {
+			  rel{{$index}} = o.r.{{$relAlias}}.o.Build()
+		  } else {
+			  rel{{$index}}, err = o.r.{{$relAlias}}.o.Create(ctx, exec)
+			  if err != nil {
+				  return nil, err
+			  }
+		  }
+
+	     {{range $rel.ValuedSides -}}
+	       {{- if ne .TableName $table.Key}}{{continue}}{{end -}}
+	       {{range .Mapped}}
+	         {{- if ne .ExternalTable $rel.Foreign}}{{continue}}{{end -}}
+	         {{- $fromColA := index $tAlias.Columns .Column -}}
+	         {{- $relIndex := printf "rel%d" $index -}}
+	         opt.{{$fromColA}} = {{$.Tables.ColumnAssigner $.CurrentPackage $.Importer $.Types $.Aliases $.Table.Key $rel.Foreign .Column .ExternalColumn $relIndex true}}
+	       {{end}}
+	     {{- end}}
+	   }
 	{{end}}
 
 	m, err := models.{{$tAlias.UpPlural}}.Insert(opt).One(ctx, exec)
 	if err != nil {
 	  return nil, err
 	}
+
+  // Update the context with the actual model after insertion
+  modelsInCreation["{{$table.Key}}"] = m
+  ctx = modelsInCreationCtx.WithValue(ctx, modelsInCreation)
 
 	{{range $index, $rel := $.Relationships.Get $table.Key -}}
 		{{- if not ($table.RelIsRequired $rel) -}}{{continue}}{{end -}}

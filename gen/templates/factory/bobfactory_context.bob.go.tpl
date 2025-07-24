@@ -12,6 +12,8 @@ var (
       {{- end}}
 
     {{end}}
+    // Stores models currently being created, keyed by table name
+    modelsInCreationCtx = newContextual[map[string]any]("modelsInCreation")
 )
 
 // Contextual is a convienience wrapper around context.WithValue and context.Value
