@@ -85,11 +85,13 @@ func TestCreate{{$tAlias.UpSingular}}With{{$relAlias}}DoesNotDuplicateParent(t *
 
 {{end}}
 
+{{end}}
+
 {{- $hasUsers := has "users" $.TableNames -}}
 {{- $hasVideos := has "videos" $.TableNames -}}
 {{- if and $hasUsers $hasVideos -}}
 {{$.Importer.Import "models" (index $.OutputPackages "models") }}
-func TestWithExistingUserHandlesCyclicRelations(t *testing.T) {
+func TestFactoryWithExistingUserHandlesCyclicRelations(t *testing.T) {
   user := &models.User{}
   video := &models.Video{}
   user.R.Videos = models.VideoSlice{video}
@@ -101,5 +103,3 @@ func TestWithExistingUserHandlesCyclicRelations(t *testing.T) {
   }
 }
 {{- end}}
-
-{{end}}
